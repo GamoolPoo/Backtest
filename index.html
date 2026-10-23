@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ATR 백테스트</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;max-width:1050px;margin:auto;padding:16px;background:#f5f7fa;color:#182230}h1{font-size:1.4rem}.card{background:white;border:1px solid #dce2e8;border-radius:12px;padding:15px;margin:13px 0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}label{display:block;font-weight:650;font-size:.9rem;margin-bottom:6px}input,select,button{font:inherit}input,select{width:100%;padding:10px;border:1px solid #cbd3dd;border-radius:8px;box-sizing:border-box}button{padding:11px 14px;border:0;border-radius:8px;font-weight:700;cursor:pointer;margin:8px 6px 0 0}.primary{background:#175cd3;color:white}.secondary{background:#e7edf5}p,li{line-height:1.55}.muted{color:#667085;font-size:.91rem}.note{background:#f0f6ff;padding:12px;border-radius:8px}.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px}.kpi{background:#f6f8fb;border:1px solid #e1e6ed;border-radius:8px;padding:11px}.kpi span{display:block;color:#667085;font-size:.8rem}.kpi b{display:block;font-size:1.2rem;margin-top:5px;overflow-wrap:anywhere}.tablewrap{overflow:auto;max-height:520px}table{border-collapse:collapse;width:100%;white-space:nowrap;font-size:.85rem}th,td{padding:8px;border-bottom:1px solid #e4e7ec;text-align:right}th{background:#eef2f6;position:sticky;top:0}td:first-child,th:first-child{text-align:left}code{background:#eef1f5;padding:2px 4px}.error{color:#b42318}.ok{color:#067647}
+</style></head><body>
+<h1>ATR 매매 백테스트</h1>
+<p class="muted">매수일 ATR 고정: 최고가 − 손절 ATR 도달 시 전량 손절 · + 목표 ATR 도달 시 최초 수량의 50% 익절 · 잔여 수량은 최고가 − 트레일링 ATR 매도</p>
+<div class="card"><h2>1. CSV 일봉 데이터</h2>
+<p>한글 열 이름도 인식합니다. 사용하시는 KRX 형식인 <code>일자,종가,시가,고가,저가</code> 순서 그대로 업로드하셔도 됩니다. <code>ATR</code>과 <code>Buy</code> 열은 선택이며, <b>매수 신호가 발생한 날짜의 ATR 값만</b> 입력하면 됩니다.</p>
+<ul class="muted"><li>ATR은 모든 날짜에 입력할 필요가 없습니다. 매수 신호일 행의 ATR 칸만 채우세요.</li><li>ATR은 매수 신호일에 계산된 값으로 고정되며, 해당 거래의 초기 손절·목표가·추적손절에 계속 사용됩니다.</li><li>Buy 열이 없으면 선택한 이동평균 상향 돌파 조건을 사용합니다. 자동 매수 신호를 사용할 경우에도 그 신호일 행에 ATR을 입력해야 합니다.</li><li>충분한 워밍업을 위해 최소 65개 이상의 일봉을 권장합니다.</li></ul>
+<div class="grid">
+<div><label>CSV 파일</label><input id="file" type="file" accept=".csv,text/csv"></div>
+<div><label>초기 자금 (만원)</label><input id="cash" type="number" value="1000" min="1" step="1"></div>
+<div><label>매수 시 자금 사용 (%)</label><input id="alloc" type="number" value="100" min="1" max="100"></div>
+<div><label>Buy 열이 없을 때 매수 신호</label><select id="mode"><option value="20">종가의 20일 이동평균 상향 돌파</option><option value="60">종가의 60일 이동평균 상향 돌파</option><option value="none">매수하지 않음 (Buy 열 필요)</option></select></div>
+</div>
+<h3>ATR 배율 설정 (직접 수정 가능)</h3>
+<div class="grid">
+<div><label>전량 손절 ATR 배율</label><input id="stopMult" type="number" value="2" min="0.1" step="0.1"></div>
+<div><label>1차 익절 ATR 배율</label><input id="targetMult" type="number" value="3" min="0.1" step="0.1"></div>
+<div><label>잔여 수량 트레일링 ATR 배율</label><input id="trailMult" type="number" value="2" min="0.1" step="0.1"></div>
+</div>
+<p class="muted">세 배율은 매수일 ATR에 곱해 계산하며, 백테스트 실행 시 입력한 값이 적용됩니다.</p>
+<button class="primary" id="run">자동 매수조건 백테스트</button><button class="secondary" id="sample">예시 데이터 실행</button><button class="secondary" id="template">CSV 양식 다운로드</button>
+</div>
+<div class="card"><h2>2. 실제 보유 종목 청산 테스트</h2><p>실제 매수일·매수가·매수수량·매수일 ATR을 입력하면, 해당 보유분의 손절과 익절 규칙을 테스트합니다. CSV에는 매수일 이후의 일봉 데이터가 포함되어야 합니다.</p><div class="grid">
+<div><label>실제 매수일</label><input id="actualDate" type="date"></div>
+<div><label>실제 매수가 (원)</label><input id="actualPrice" type="number" min="0.01" step="any" placeholder="예: 267000"></div>
+<div><label>실제 매수수량 (주)</label><input id="actualQty" type="number" min="1" step="1" placeholder="예: 10"></div>
+<div><label>매수일 ATR (원)</label><input id="actualATR" type="number" min="0.01" step="any" placeholder="예: 8500"></div>
+</div><button class="primary" id="actualRun">실제 매수 기준 청산 테스트</button><p class="muted">실제 매수일 당일의 고가·저가는 매수 시점 전 가격일 수 있어 검사하지 않고, 다음 거래일부터 매도 규칙을 적용합니다. 수수료·세금은 미반영입니다.</p>
+<p id="status" class="muted">CSV를 선택하거나 예시 데이터를 실행하세요.</p></div>
+<div class="card"><h2>3. 적용 규칙 및 가정</h2><div class="note">
+<b>진입:</b> 매수 신호일 ATR을 고정해 다음 거래일 시가에 매수합니다.<br>
+<b>전량 손절:</b> 1차 익절 전, 최고가 − (매수일 ATR × 전량 손절 배율)에 도달하면 전량 매도합니다. 기본 배율은 2.0입니다.<br>
+<b>1차 익절:</b> 매수가 + (매수일 ATR × 1차 익절 배율)에 도달하면 최초 수량의 50%를 한 번만 매도합니다. 기본 배율은 3.0입니다.<br>
+<b>잔여 수량 트레일링:</b> 1차 익절 후 잔여 수량은 최고가 − (매수일 ATR × 트레일링 배율)에 도달하면 전량 매도합니다. 기본 배율은 2.0입니다. 최고가는 갱신되고, 스탑은 상향만 허용하며 당일 고가 갱신은 다음 거래일부터 스탑 계산에 반영합니다.<br>
+
+<b>포지션 종료:</b> 데이터 마지막 날까지 남은 수량은 마지막 종가로 평가 매도합니다.
+</div><p class="muted">수수료·세금·슬리피지는 미반영합니다. 실제 증권사 주문을 내는 기능이 아닌 과거 데이터 시뮬레이터입니다. 갭 하락 등으로 스탑보다 불리한 가격에 체결될 수 있습니다.</p></div>
+<div class="card"><h2>4. 결과</h2><div id="results" class="muted">실행 후 결과가 표시됩니다.</div></div>
+<div class="card"><h2>5. 거래 내역 (매도 단계별)</h2><p class="muted">부분 매도도 각각 한 줄로 표시합니다. 전량 손절, 1차 익절, 1차 익절 후 잔여 수량의 ATR 추적손절을 구분합니다.</p><div class="tablewrap"><table><thead><tr><th>거래 #</th><th>매도 단계</th><th>매수일</th><th>매수가</th><th>매도일</th><th>매도가</th><th>매도수량</th><th>매도분 수익률</th><th>매도분 손익</th><th>매도 사유</th></tr></thead><tbody id="tbody"></tbody></table></div></div>
+<script>
+const $=x=>document.getElementById(x);
+function n(v){return v==null||String(v).trim()===''?NaN:Number(String(v).replace(/,/g,'').trim())}
+function money(v){return Math.round(v).toLocaleString('ko-KR')+'원'}
+function pc(v){return (v*100).toFixed(2)+'%'}
+function atrMultipliers(){const stop=n($('stopMult').value),target=n($('targetMult').value),trail=n($('trailMult').value);if(!(stop>0&&target>0&&trail>0))throw Error('세 ATR 배율은 모두 0보다 큰 숫자로 입력하세요.');return {stop,target,trail}}
+function parseCSV(s){
+ s=s.replace(/^\uFEFF/,'');
+ // CSV parser supports quoted fields and commas inside prices such as "250,500".
+ const rows=[]; let row=[], field='', quoted=false;
+ for(let i=0;i<s.length;i++){
+  const c=s[i], next=s[i+1];
+  if(c==='"' && quoted && next==='"'){field+='"';i++}
+  else if(c==='"')quoted=!quoted;
+  else if(c===',' && !quoted){row.push(field.trim());field=''}
+  else if((c==='\n'||c==='\r')&&!quoted){if(c==='\r'&&next==='\n')i++;row.push(field.trim());field='';if(row.some(v=>v!==''))rows.push(row);row=[]}
+  else field+=c;
+ }
+ if(field!==''||row.length){row.push(field.trim());if(row.some(v=>v!==''))rows.push(row)}
+ if(rows.length<2)throw Error('CSV 데이터가 부족합니다.');
+ const head=rows[0].map(x=>x.trim().toLowerCase().replace(/[\s_()-]/g,''));
+ const find=a=>head.findIndex(h=>a.some(alias=>h===alias.replace(/[\s_()-]/g,'')||h.includes(alias.replace(/[\s_()-]/g,''))));
+ const ix={date:find(['date','날짜','일자']),open:find(['open','시가']),high:find(['high','고가']),low:find(['low','저가']),close:find(['close','종가']),atr:find(['atr','buyatr','매수atr','atr14','atr(14)']),buy:find(['buy','by','매수','signal','매수신호'])};
+ for(const k of ['date','open','high','low','close'])if(ix[k]<0)throw Error('필수 열 누락: 일자,종가,시가,고가,저가 (또는 Date,Close,Open,High,Low)');
+ const hasAnyBuy=ix.buy>=0&&rows.slice(1).some(r=>String(r[ix.buy]??'').trim()!=='');
+ return rows.slice(1).map(r=>({date:r[ix.date]?.trim(),open:n(r[ix.open]),high:n(r[ix.high]),low:n(r[ix.low]),close:n(r[ix.close]),atr:ix.atr<0?NaN:n(r[ix.atr]),buy:hasAnyBuy&&n(r[ix.buy])===1,hasBuy:hasAnyBuy})).filter(d=>d.date&&[d.open,d.high,d.low,d.close].every(Number.isFinite)&&d.open>0&&d.high>0&&d.low>0&&d.close>0).sort((a,b)=>a.date.localeCompare(b.date));
+}
+function signals(raw){
+ let d=raw.map(x=>({...x,signal:x.hasBuy?x.buy:false}));
+ if(d.some(x=>x.hasBuy))return d;
+ const mode=$('mode').value, w=Number(mode);
+ if(mode==='none')return d;
+ for(let i=w;i<d.length;i++){
+  const avg=d.slice(i-w,i).reduce((s,x)=>s+x.close,0)/w;
+  const prev=d.slice(i-w-1,i-1).reduce((s,x)=>s+x.close,0)/w;
+  d[i].signal=d[i].close>avg&&d[i-1].close<=prev;
+ }
+ return d;
+}
+function backtest(raw){
+ const data=signals(raw), initial=n($('cash').value)*10000, alloc=n($('alloc').value)/100, mult=atrMultipliers();
+ if(!(initial>0)||!(alloc>0&&alloc<=1))throw Error('초기 자금(만원)과 매수 비율을 확인하세요.');
+ let cash=initial,pos=null,pendingBuy=false,pendingBuyATR=NaN,pendingExit=false,id=0,trades=[],events=[],curve=[],signalCount=data.filter(x=>x.signal).length,skippedATR=0;
+ function sell(q,price,date,reason){
+  if(!pos||q<=0)return;
+  q=Math.min(q,pos.qty);const soldQty=q;const eventPL=(price-pos.entry)*soldQty;const reasonLabel=reason.includes('전량 손절')?'전량 손절':reason.includes('1차 익절')?'1차 익절':reason.includes('ATR 트레일링')?(price>=pos.entry?'2차 익절 · ATR 추적손절':'2차 손절 · ATR 추적손절'):reason.includes('기간 종료')?'기간 종료 청산':reason;
+  events.push({id:pos.id,buyDate:pos.entryDate,buy:pos.entry,sellDate:date,sell:price,qty:soldQty,ret:(price-pos.entry)/pos.entry,pl:eventPL,reason,stage:reasonLabel});
+  cash+=q*price;pos.proceeds+=q*price;pos.sold+=q;pos.qty-=q;pos.reasons.push(reason);
+  if(pos.qty<1e-8){
+   const pl=pos.proceeds-pos.entry*pos.original;
+   trades.push({id:pos.id,buyDate:pos.entryDate,buy:pos.entry,sellDate:date,avgSell:pos.sold?pos.proceeds/pos.sold:price,ret:pl/(pos.entry*pos.original),pl,reasons:[...new Set(pos.reasons)].join(' / ')});
+   pos=null;
+  }
+ }
+ for(let i=0;i<data.length;i++){
+  const d=data[i];
+  if(!pos&&pendingBuy&&i>0){
+   const entryATR=pendingBuyATR;
+   if(!(Number.isFinite(entryATR)&&entryATR>0)){skippedATR++;}
+   else {const qty=Math.floor((cash*alloc)/d.open);
+    if(qty>0){id++;pos={id,entryDate:d.date,entry:d.open,atr:entryATR,stop:d.open-mult.stop*entryATR,target:d.open+mult.target*entryATR,stopMult:mult.stop,targetMult:mult.target,trailMult:mult.trail,qty,original:qty,sold:0,proceeds:0,highest:d.open,trail:null,initialStopDone:false,targetDone:false,reasons:[]};cash-=qty*d.open}}
+   pendingBuy=false;pendingBuyATR=NaN;
+  }
+  if(pos){
+   const oldTrail=pos.trail;
+   // Gap-through stops are filled at open. Initial stop is full liquidation; trailing activates after first profit-taking.
+   if(!pos.targetDone&&d.open<=pos.stop){sell(pos.qty,d.open,d.date,'전량 손절: 최고가 − '+pos.stopMult+' ATR');}
+   else if(pos.targetDone&&oldTrail!==null&&d.open<=oldTrail)sell(pos.qty,d.open,d.date,'ATR 트레일링 전량매도');
+   if(pos){
+    // Intraday stop precedes target if both are touched.
+    if(!pos.targetDone&&d.low<=pos.stop){sell(pos.qty,pos.stop,d.date,'전량 손절: 최고가 − '+pos.stopMult+' ATR');}
+    else if(pos.targetDone&&oldTrail!==null&&d.low<=oldTrail){sell(pos.qty,oldTrail,d.date,'ATR 트레일링 전량매도');}
+    else if(!pos.targetDone&&d.high>=pos.target){sell(Math.min(pos.qty,Math.max(1,Math.floor(pos.original*0.5))),pos.target,d.date,'1차 익절 +'+pos.targetMult+' ATR (최초 수량 50%)');if(pos)pos.targetDone=true;}
+   }
+   if(pos){
+    pos.highest=Math.max(pos.highest,d.high);
+    if(pos.targetDone){const candidate=pos.highest-pos.trailMult*pos.atr;pos.trail=pos.trail===null?candidate:Math.max(pos.trail,candidate);}
+   }
+  }
+  curve.push({date:d.date,equity:cash+(pos?pos.qty*d.close:0)});
+  pendingBuy=!pos&&!!d.signal; if(pendingBuy)pendingBuyATR=d.atr; else pendingBuyATR=NaN;
+ }
+ if(pos)sell(pos.qty,data[data.length-1].close,data[data.length-1].date,'기간 종료 평가매도');
+ const final=cash;let peak=initial,mdd=0;
+ for(const x of curve){peak=Math.max(peak,x.equity);mdd=Math.max(mdd,(peak-x.equity)/peak)}
+ const wins=trades.filter(t=>t.pl>0).length;
+ return {initial,final,ret:final/initial-1,mdd,trades,events,wins,signals:signalCount,count:data.length,skippedATR};
+}
+function normalizeDate(v){
+ const x=String(v||'').trim().replace(/[.]/g,'/').replace(/-/g,'/');
+ const m=x.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})/);
+ return m?`${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`:String(v||'').slice(0,10);
+}
+function manualExitTest(raw){
+ const date=$('actualDate').value, entry=n($('actualPrice').value), qty=n($('actualQty').value), atr=n($('actualATR').value), mult=atrMultipliers();
+ if(!date||!(entry>0)||!(qty>0&&Number.isInteger(qty))||!(atr>0))throw Error('실제 매수일, 매수가, 정수 매수수량, 매수일 ATR을 모두 입력하세요.');
+ const data=raw.slice().sort((a,b)=>normalizeDate(a.date).localeCompare(normalizeDate(b.date)));
+ const idx=data.findIndex(d=>normalizeDate(d.date)===date);
+ if(idx<0)throw Error('CSV에서 실제 매수일을 찾을 수 없습니다. 해당 날짜의 일봉 데이터가 있는지 확인하세요.');
+ let pos={id:1,entryDate:date,entry,atr,stop:entry-mult.stop*atr,target:entry+mult.target*atr,stopMult:mult.stop,targetMult:mult.target,trailMult:mult.trail,qty,original:qty,sold:0,proceeds:0,highest:entry,trail:null,targetDone:false,reasons:[]};
+ let cash=0,events=[],trades=[],curve=[],closed=false;
+ function sell(q,price,d,reason){
+  if(!pos||q<=0)return;
+  q=Math.min(q,pos.qty);const pl=(price-entry)*q;
+  const stage=reason.includes('전량 손절')?'전량 손절':reason.includes('1차 익절')?'1차 익절':reason.includes('ATR 트레일링')?(price>=entry?'2차 익절 · ATR 추적손절':'2차 손절 · ATR 추적손절'):'기간 종료 청산';
+  events.push({id:1,buyDate:date,buy:entry,sellDate:normalizeDate(d.date),sell:price,qty:q,ret:(price-entry)/entry,pl,reason,stage});
+  cash+=q*price;pos.proceeds+=q*price;pos.sold+=q;pos.qty-=q;pos.reasons.push(reason);
+  if(pos.qty<=0){trades.push({id:1,buyDate:date,buy:entry,sellDate:normalizeDate(d.date),avgSell:pos.proceeds/pos.sold,ret:(pos.proceeds-entry*qty)/(entry*qty),pl:pos.proceeds-entry*qty,reasons:[...new Set(pos.reasons)].join(' / ')});pos=null;closed=true;}
+ }
+ for(let i=idx+1;i<data.length&&pos;i++){
+  const d=data[i], oldTrail=pos.trail;
+  if(!pos.targetDone&&d.open<=pos.stop)sell(pos.qty,d.open,d,'전량 손절: 최고가 − '+pos.stopMult+' ATR');
+  else if(pos.targetDone&&oldTrail!==null&&d.open<=oldTrail)sell(pos.qty,d.open,d,'ATR 트레일링 전량매도');
+  if(pos){if(!pos.targetDone&&d.low<=pos.stop)sell(pos.qty,pos.stop,d,'전량 손절: 최고가 − '+pos.stopMult+' ATR');
+   else if(pos.targetDone&&oldTrail!==null&&d.low<=oldTrail)sell(pos.qty,oldTrail,d,'ATR 트레일링 전량매도');
+   else if(!pos.targetDone&&d.high>=pos.target){sell(Math.min(pos.qty,Math.max(1,Math.floor(pos.original*0.5))),pos.target,d,'1차 익절 +'+pos.targetMult+' ATR (최초 수량 50%)');if(pos)pos.targetDone=true;}
+  }
+  if(pos){pos.highest=Math.max(pos.highest,d.high);if(!pos.targetDone){const stopCandidate=pos.highest-pos.stopMult*pos.atr;pos.stop=Math.max(pos.stop,stopCandidate);}if(pos.targetDone){const candidate=pos.highest-pos.trailMult*pos.atr;pos.trail=pos.trail===null?candidate:Math.max(pos.trail,candidate);}}
+  curve.push({date:normalizeDate(d.date),equity:cash+(pos?pos.qty*d.close:0)});
+ }
+ if(pos){const last=data[data.length-1];sell(pos.qty,last.close,last,'기간 종료 평가매도');}
+ const invested=entry*qty, final=cash, ret=final/invested-1;let peak=invested,mdd=0;
+ for(const x of curve){peak=Math.max(peak,x.equity);mdd=Math.max(mdd,(peak-x.equity)/peak)}
+ return {initial:invested,final,ret,mdd,trades,events,wins:trades.filter(t=>t.pl>0).length,signals:1,count:data.length-idx-1,skippedATR:0};
+}
+function show(r){
+ const stats=[['최종 자산',money(r.final)],['총수익률',pc(r.ret)],['최대 낙폭(MDD)',pc(r.mdd)],['완료 거래',r.trades.length+'회'],['승률',r.trades.length?pc(r.wins/r.trades.length):'—'],['매수 신호',r.signals+'회']];
+ $('results').innerHTML='<div class="kpis">'+stats.map(x=>'<div class="kpi"><span>'+x[0]+'</span><b>'+x[1]+'</b></div>').join('')+'</div><p class="muted">분석 일봉 '+r.count+'개 · 수수료/세금 미반영 · ATR 누락으로 건너뛴 매수 '+r.skippedATR+'회</p>'+(r.skippedATR?'<p class="error">매수 신호일 ATR이 비어 있어 '+r.skippedATR+'회 매수를 건너뛰었습니다. 매수 신호 행의 ATR 칸을 채워 주세요.</p>':'');
+ $('tbody').innerHTML=r.events.map(e=>'<tr><td>'+e.id+'</td><td>'+e.stage+'</td><td>'+e.buyDate+'</td><td>'+e.buy.toLocaleString('ko-KR')+'</td><td>'+e.sellDate+'</td><td>'+e.sell.toLocaleString('ko-KR')+'</td><td>'+e.qty.toLocaleString('ko-KR')+'</td><td>'+pc(e.ret)+'</td><td>'+money(e.pl)+'</td><td>'+e.reason+'</td></tr>').join('');
+}
+function runText(s){try{const d=parseCSV(s);if(d.length<65)throw Error('일봉 데이터가 '+d.length+'개입니다. 최소 65개 이상을 권장합니다.');show(backtest(d));$('status').textContent='백테스트 완료';$('status').className='ok'}catch(e){$('status').textContent=e.message;$('status').className='error'}}
+$('run').onclick=()=>{const f=$('file').files[0];if(!f){$('status').textContent='먼저 CSV 파일을 선택하세요.';$('status').className='error';return}const r=new FileReader();r.onload=()=>runText(r.result);r.onerror=()=>{$('status').textContent='파일을 읽을 수 없습니다.'};r.readAsText(f,'UTF-8')};
+$('actualRun').onclick=()=>{const f=$('file').files[0];if(!f){$('status').textContent='먼저 CSV 파일을 선택하세요.';$('status').className='error';return}const r=new FileReader();r.onload=()=>{try{const d=parseCSV(r.result);show(manualExitTest(d));$('status').textContent='실제 매수 기준 청산 테스트 완료';$('status').className='ok'}catch(e){$('status').textContent=e.message;$('status').className='error'}};r.onerror=()=>{$('status').textContent='파일을 읽을 수 없습니다.';$('status').className='error'};r.readAsText(f,'UTF-8')};
+$('template').onclick=()=>{const s='일자,종가,시가,고가,저가,ATR,Buy\n2024-01-02,10100,10000,10200,9900,,0\n2024-01-03,10300,10100,10400,10000,260,1\n';const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+s],{type:'text/csv;charset=utf-8'}));a.download='backtest_template.csv';a.click();URL.revokeObjectURL(a.href)};
+$('sample').onclick=()=>{let s='Date,Open,High,Low,Close,ATR,Buy\n',p=10000;for(let i=0;i<190;i++){let dt=new Date(Date.UTC(2024,0,1+i));if([0,6].includes(dt.getUTCDay()))continue;let old=p;p=Math.max(7000,p+Math.sin(i/3)*120+(i%20<12?45:-60));let o=old+Math.sin(i)*35,h=Math.max(o,p)+100+Math.abs(Math.sin(i/4))*80,l=Math.min(o,p)-80-Math.abs(Math.cos(i/5))*60,a=180+Math.abs(Math.sin(i/9))*80,b=i>65&&i%31===0?1:0;s+=`${dt.toISOString().slice(0,10)},${o.toFixed(2)},${h.toFixed(2)},${l.toFixed(2)},${p.toFixed(2)},${a.toFixed(2)},${b}\n`}runText(s)};
+</script></body></html>
